@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SK Editor" />
+    <meta name="description" content="Editor de código profissional com IA para mobile" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>SK Code Editor</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="./assets/index-Ci-Vc69Z.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-tHCXXaAl.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // ── Service Worker + auto-update após deploy ──────────────────────────
+      // Padrão "atualização sem dor de cabeça":
+      //   1) Registra o SW
+      //   2) Verifica atualização periodicamente (a cada 60s e ao focar a aba)
+      //   3) Quando detecta SW novo esperando, AUTO-PULA pra ele e recarrega
+      //   4) Se o controller mudar, recarrega a página (1 vez só, com guard)
+      if ('serviceWorker' in navigator) {
+        let reloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloaded) return;
+          reloaded = true;
+          console.log('[PWA] Versão nova detectada — recarregando...');
+          window.location.reload();
+        });
+
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js', { scope: './' })
+            .then(reg => {
+              console.log('[PWA] Service worker registrado:', reg.scope);
+
+              // Quando o navegador encontrar um SW novo, força a ativação
+              const promoteWaiting = () => {
+                if (reg.waiting) {
+                  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
+              };
+              promoteWaiting();
+              reg.addEventListener('updatefound', () => {
+                const sw = reg.installing;
+                if (!sw) return;
+                sw.addEventListener('statechange', () => {
+                  if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Há controller atual + novo instalado → promove o novo
+                    promoteWaiting();
+                  }
+                });
+              });
+
+              // Checa atualização a cada 60s e ao focar a aba
+              setInterval(() => reg.update().catch(() => {}), 60_000);
+              window.addEventListener('focus', () => reg.update().catch(() => {}));
+            })
+            .catch(err => console.warn('[PWA] Falha ao registrar SW:', err));
+        });
+      }
+
+      // ── Auto-recuperação se algum bundle der erro (cache antigo apontando
+      //    pra arquivo que não existe mais no servidor) ──────────────────────
+      window.addEventListener('error', (e) => {
+        const isAssetError = e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK');
+        if (!isAssetError) return;
+        const url = e.target.src || e.target.href || '';
+        if (!url.includes('/assets/')) return;
+
+        // Se um bundle não carregar, limpa cache do SW e recarrega 1x
+        if (sessionStorage.getItem('sk_sw_recovery_done')) return;
+        sessionStorage.setItem('sk_sw_recovery_done', '1');
+        console.warn('[PWA] Bundle quebrado detectado — limpando cache e recarregando:', url);
+
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+        }
+        if ('caches' in window) {
+          caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+            .finally(() => setTimeout(() => window.location.reload(), 300));
+        } else {
+          window.location.reload();
+        }
+      }, true);
+    </script>
+  </body>
+</html>
